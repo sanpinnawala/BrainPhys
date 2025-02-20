@@ -1,0 +1,14 @@
+*.sh
+*.uuid
+reaction-diffusion/artefacts/
+reaction-diffusion/checkpoints/
+reaction-diffusion/data/
+reaction-diffusion/wandb/
+diffusion/artefacts
+diffusion/checkpoints/
+diffusion/data/
+diffusion/wandb/
+.idea/
+reaction-diffusion/src/__pycache__/
+diffusion/src/__pycache__/
+.DS_Store

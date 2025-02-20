@@ -1,0 +1,113 @@
+# setup
+experiment: "reaction-diffusion-base-experiment"
+project: "reaction-diffusion"
+mode: "brainphys"
+batch_size: 16 # 16
+num_samples: 100 # 100 # num of individuals
+max_epochs: 400 # 400
+
+# log
+log_every_n_steps: 5
+log_model: "all"
+
+# checkpoints
+monitor: "val_loss"
+ckpt_filename: "best_model"
+save_top_k: 1
+ckpt_mode: "min"
+
+# data
+alpha_range_x:
+  - 0.1
+  - 1.0
+alpha_range_y: # anisotropic
+  - 0.01
+  - 0.1
+total_space: 24.0
+spatial_points: 25  # grid size (HxW)
+total_time: 24.0
+time_points: 25
+predefined_t: # observation timepoints
+  - 0.0
+  - 6.0
+  - 12.0
+  - 24.0
+reaction: True
+reaction_coeff_range:
+  - 0.01
+  - 0.1
+noise: False # observational noise
+snr: 5.0 # signal-to-noise ratio
+
+# model
+monotonic_regularisation: True # monotonic regularisation
+reg_lambda: 1.0
+adam:
+  lr: 0.001
+  weight_decay: 0.0001
+  betas:
+    - 0.9
+    - 0.999
+  amsgrad: True
+steplr:
+  step_size: 100
+  gamma: 0.9
+ode:
+  method: 'dopri5'
+  rtol: 0.001
+  atol: 0.0001
+conv:
+  channel:
+    - 1
+    - 8
+    - 16
+    - 32
+  kernel_size: 3
+  stride:
+    - 1
+    - 1
+    - 2
+  padding: 1
+  leakyrelu:
+    slope: 0.02
+  groupnorm:
+    groups: 4
+  maxpool:
+    kernel_size: 2
+    stride: 2
+lstm:
+  hidden_size: 32
+dconv:
+  channel:
+    - 32
+    - 16
+    - 8
+    - 1
+  kernel_size: 3
+  stride:
+    - 3
+    - 2
+    - 2
+  padding: 1
+  leakyrelu:
+    slope: 0.02
+  groupnorm:
+    groups: 4
+
+# test
+test_data_samples: 100
+reconstruct: True
+infer_samples: 100 # to quantify uncertainty
+param_analysis: True
+extrapolate: True # interpolation and extrapolation
+extrap_t:
+  - 18.0
+  - 36.0
+  - 60.0
+extrap_time: 60.0
+extrap_points: 61
+
+# paths
+ckpt_dir: "/app/reaction-diffusion/checkpoints/brainphys/base"
+data_dir: "/app/reaction-diffusion/data/base/"
+artefacts_dir: "/app/reaction-diffusion/artefacts/base"
