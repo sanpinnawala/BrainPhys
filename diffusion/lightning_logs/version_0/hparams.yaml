@@ -1,0 +1,108 @@
+hyperparams:
+  accelerator: gpu
+  adam:
+    amsgrad: true
+    betas:
+    - 0.9
+    - 0.999
+    lr: 0.001
+    weight_decay: 0.0001
+  alpha_range:
+  - 0.01
+  - 1.0
+  artefacts_dir: /app/diffusion/artefacts/d-data/
+  batch_size: 8
+  ckpt_dir: /app/diffusion/checkpoints/d-data/
+  ckpt_filename: best_model
+  ckpt_mode: min
+  conv:
+    channel:
+    - 1
+    - 8
+    - 16
+    - 32
+    groupnorm:
+      groups: 4
+    kernel_size: 3
+    leakyrelu:
+      slope: 0.02
+    maxpool:
+      kernel_size: 2
+      stride: 2
+    padding: 1
+    stride:
+    - 1
+    - 1
+    - 2
+  data_dir: /app/diffusion/data/d-data/
+  dconv:
+    channel:
+    - 32
+    - 16
+    - 8
+    - 1
+    groupnorm:
+      groups: 4
+    kernel_size:
+    - 4
+    - 4
+    - 3
+    leakyrelu:
+      slope: 0.02
+    padding:
+    - 1
+    - 1
+    - 2
+    stride:
+    - 3
+    - 3
+    - 3
+  devices: auto
+  experiment: diffusion-experiment
+  extrap_points: 61
+  extrap_t:
+  - 18.0
+  - 36.0
+  - 60.0
+  extrap_time: 60.0
+  extrapolate: true
+  infer_samples: 100
+  log_every_n_steps: 5
+  log_model: all
+  lstm:
+    hidden_size: 32
+  max_epochs: 200
+  mode: brainphys
+  monitor: val_loss
+  monotonic_regularisation: false
+  noise: false
+  num_samples: 1000
+  ode:
+    atol: 0.0001
+    method: dopri5
+    rtol: 0.001
+  param_analysis: true
+  precision: 16-mixed
+  predefined_t:
+  - 0.0
+  - 6.0
+  - 24.0
+  profiler: simple
+  project: diffusion
+  reaction: false
+  reaction_coeff_range:
+  - 0.01
+  - 0.1
+  reconstruct: true
+  reg_lambda: 1.0
+  save_top_k: 1
+  snr: 5.0
+  spatial_points: 50
+  steplr:
+    gamma: 0.9
+    step_size: 10
+  strategy: auto
+  test_data_samples: 100
+  time_points: 25
+  total_space: 49.0
+  total_time: 24.0

@@ -16,8 +16,8 @@ class VAE(pl.LightningModule):
     def __init__(self, hyperparams):
         super(VAE, self).__init__()
         self.save_hyperparameters()
-        self.alpha_range_x = hyperparams['alpha_range_x']
-        self.alpha_range_y = hyperparams['alpha_range_y']
+        self.hyperparams = hyperparams
+        self.alpha_range = hyperparams['alpha_range']
         self.reaction_coeff_range = hyperparams['reaction_coeff_range']
         self.total_space = hyperparams['total_space']
         self.spatial_points = hyperparams['spatial_points']
@@ -37,7 +37,7 @@ class VAE(pl.LightningModule):
         self.monotonic_regularisation = hyperparams['monotonic_regularisation']
         self.reg_lambda = hyperparams['reg_lambda']
         self.encoder = Encoder(hyperparams)
-        self.ode_func = ODEFunc()
+        self.ode_func = ODEFunc(hyperparams)
         self.log_var = torch.nn.Parameter(torch.zeros(1))
         # test
         self.infer_samples = hyperparams['infer_samples']
@@ -62,7 +62,7 @@ class VAE(pl.LightningModule):
 
     @staticmethod
     def log_normal_prior(range_min, range_max):
-        mean = (range_min + range_max) / 2  #  log space mean
+        mean = (range_min + range_max) / 2  # log space mean
         var = ((range_max - range_min) ** 2) / 16  # log space variance
 
         mean_updated = np.log(mean ** 2 / np.sqrt(var + mean ** 2))  # normal space mean
@@ -81,8 +81,7 @@ class VAE(pl.LightningModule):
         loss = torch.sum(0.5 * (((x - x_recon) ** 2) / var + torch.log(2 * torch.pi * var)))
         return loss
 
-    @staticmethod
-    def monotonic_reg(x_recon, zX, zY, zR, reg_lambda):
+    def monotonic_reg(self, x_recon, mask, zX, zR, reg_lambda):
         batch_size, t, h, w = x_recon.shape
 
         x = torch.linspace(0., h, h - 1, device=x_recon.device)
@@ -91,16 +90,16 @@ class VAE(pl.LightningModule):
         dx = x[1] - x[0]
         dy = y[1] - y[0]
 
-        func = ODEFunc()
+        func = ODEFunc(self.hyperparams).to(self.device)
         du_dt_list = []
 
         for i in range(t):
             u = x_recon[:, i, :, :]  # [B, H, W] at time t_i
 
-            du_dt = func(u, dx, dy, zX, zY, zR)  # [B, H, W]
+            du_dt = func(u, mask, dx, dy, zX, zR)  # [B, H, W]
             du_dt_list.append(du_dt)
 
-        du_dt = torch.stack(du_dt_list, dim=1) # [B, T, H, W]
+        du_dt = torch.stack(du_dt_list, dim=1)  # [B, T, H, W]
         du_dt_flat = du_dt.view(batch_size, -1, t)  # [B, H * W, T]
 
         mono_du_dt = (-1) * du_dt_flat
@@ -109,7 +108,7 @@ class VAE(pl.LightningModule):
 
         return mono_reg.sum()
 
-    def solve_ode(self, zX, zY, zR, init_u, t, total_time, time_points):
+    def solve_ode(self, zX, zR, init_u, mask, t, total_time, time_points):
         x = torch.linspace(0., self.total_space, self.spatial_points, device=init_u.device)  # spatial domain
         y = torch.linspace(0., self.total_space, self.spatial_points, device=init_u.device)  # spatial domain
 
@@ -122,7 +121,7 @@ class VAE(pl.LightningModule):
 
         def func(t, u):
             # torch.autograd.set_detect_anomaly(True)
-            return self.ode_func(u, dx, dy, zX, zY, zR)
+            return self.ode_func(u, mask, dx, dy, zX, zR)
 
         # solve ode
         y_seq = odeint(func, init_u, t_fine, method=self.ode_method, rtol=self.ode_rtol, atol=self.ode_atol)
@@ -130,36 +129,36 @@ class VAE(pl.LightningModule):
 
         return y_seq[:, indices, :, :]
 
-    def forward(self, x, x_t):
-        zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar = self.encoder(x, x_t)
+    def forward(self, x, x_mask, x_t):
+        zX_mean, zX_logvar, zR_mean, zR_logvar = self.encoder(x, x_t)
 
         zX = self.reparameterize(zX_mean, zX_logvar)  # [B, 1]
-        zY = self.reparameterize(zY_mean, zY_logvar)
         zR = self.reparameterize(zR_mean, zR_logvar)
 
         init_u = x[:, 0, :, :]
-        x_recon = self.solve_ode(zX, zY, zR, init_u, self.predefined_t, self.total_time, self.time_points)  # [B, T, H, W]
+        mask = x_mask[:, 0, :, :]
 
-        return x, x_recon, zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar, zX, zY, zR
+        x_recon = self.solve_ode(zX, zR, init_u, mask, self.predefined_t, self.total_time, self.time_points)  # [B, T, H, W]
+        # x_recon = x_recon + g_theta(x_recon)  # [B, T, H, W]
 
-    def loss_function(self, x, x_recon, zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar, zX, zY, zR):
-        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range_x[0], self.alpha_range_x[1])
-        zY_prior_mean, zY_prior_logvar = self.log_normal_prior(self.alpha_range_y[0], self.alpha_range_y[1])
+        return x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR
+
+    def loss_function(self, x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR):
+        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range[0], self.alpha_range[1])
         zR_prior_mean, zR_prior_logvar = self.log_normal_prior(self.reaction_coeff_range[0], self.reaction_coeff_range[1])
 
         # kl divergence
         kl_zX = self.kl_divergence(zX_mean, zX_logvar, zX_prior_mean, zX_prior_logvar)
-        kl_zY = self.kl_divergence(zY_mean, zY_logvar, zY_prior_mean, zY_prior_logvar)
         kl_zR = self.kl_divergence(zR_mean, zR_logvar, zR_prior_mean, zR_prior_logvar)
 
-        kl_loss = kl_zX + kl_zY + kl_zR
+        kl_loss = kl_zX + kl_zR
 
         # reconstruction loss
         recon_loss = self.gaussian_nll_loss(x, x_recon, self.log_var)
 
         # monotonic regularisation
         if self.monotonic_regularisation:
-            mono_reg = self.monotonic_reg(x_recon, zX, zY, zR, reg_lambda=self.reg_lambda)
+            mono_reg = self.monotonic_reg(x_recon, mask, zX, zR, reg_lambda=self.reg_lambda)
 
             total_loss = recon_loss + kl_loss + mono_reg
             self.log('mono_reg', mono_reg)
@@ -174,11 +173,12 @@ class VAE(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         x = batch['heat']
+        x_mask = batch['mask']
         x_t = batch['time']
 
-        x, x_recon, zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar, zX, zY, zR = self(x, x_t)
+        x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR = self(x, x_mask, x_t)
 
-        loss = self.loss_function(x, x_recon, zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar, zX, zY, zR,)
+        loss = self.loss_function(x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR)
         self.log('train_loss', loss)
 
         lr = self.optimizers().param_groups[0]['lr']
@@ -188,42 +188,45 @@ class VAE(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         x = batch['heat']
+        x_mask = batch['mask']
         x_t = batch['time']
 
-        x, x_recon, zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar, zX, zY, zR = self(x, x_t)
+        x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR = self(x, x_mask, x_t)
 
-        loss = self.loss_function(x, x_recon, zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar, zX, zY, zR,)
+        loss = self.loss_function(x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR)
         self.log('val_loss', loss)
 
         if self.trainer.current_epoch == (self.max_epochs - 1):
-            val_plot_recon(x, x_t, x_recon, zX, zY, zR, self.artefacts)
+            val_plot_recon(x, x_t, x_recon, zX, zR, self.artefacts)
 
         return loss
 
     def test_step(self, batch, batch_idx):
         x = batch['heat']
+        x_mask = batch['mask']
         x_t = batch['time']
         init_u = x[:, 0, :, :]
+        mask = x_mask[:, 0, :, :]
 
         recon_samples = []
 
         # reconstruction
         if self.reconstruct:
             for i in range(self.infer_samples):
-                _, x_recon, _, _, _, _, _, _, _, _, _ = self(x, x_t)
+                _, x_recon, _, _, _, _, _, _, _ = self(x, x_mask, x_t)
                 recon_samples.append(x_recon.detach().cpu().numpy())
             test_plot_recon(x, x_t, recon_samples, self.artefacts)
 
         # parameter analysis
         if self.param_analysis:
-            _, _, _, _, _, _, _, _, zX, zY, zR = self(x, x_t)
-            test_plot_param(zX, zY, zR, self.artefacts, self.data_dir)
+            _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
+            test_plot_param(zX, zR, self.artefacts, self.data_dir)
 
         # interpolation and extrapolation
         if self.extrapolate:
-            _, _, _, _, _, _, _, _, zX, zY, zR = self(x, x_t)
+            _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
             full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
-            x_extrap = self.solve_ode(zX, zY, zR, init_u, full_t, self.extrap_time, self.extrap_points)
+            x_extrap = self.solve_ode(zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
             test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
 
     def configure_optimizers(self):

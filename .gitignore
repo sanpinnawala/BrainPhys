@@ -1,5 +1,13 @@
 *.sh
 *.uuid
+reaction-diffusion-mixture-model-v2/artefacts/
+reaction-diffusion-mixture-model-v2/checkpoints/
+reaction-diffusion-mixture-model-v2/data/
+reaction-diffusion-mixture-model-v2/wandb/
+reaction-diffusion-mixture-model/artefacts/
+reaction-diffusion-mixture-model/checkpoints/
+reaction-diffusion-mixture-model/data/
+reaction-diffusion-mixture-model/wandb/
 reaction-diffusion/artefacts/
 reaction-diffusion/checkpoints/
 reaction-diffusion/data/

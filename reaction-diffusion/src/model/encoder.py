@@ -15,8 +15,7 @@ class Encoder(nn.Module):
         self.pool_kernel_size = hyperparams['conv']['maxpool']['kernel_size']
         self.pool_stride = hyperparams['conv']['maxpool']['stride']
         self.hidden_size = hyperparams['lstm']['hidden_size']
-        self.alpha_range_x = hyperparams['alpha_range_x']
-        self.alpha_range_y = hyperparams['alpha_range_y']
+        self.alpha_range = hyperparams['alpha_range']
         self.reaction_coeff_range = hyperparams['reaction_coeff_range']
 
         # feature extraction
@@ -45,9 +44,6 @@ class Encoder(nn.Module):
         self.fc_zX_mean = nn.Linear(self.hidden_size, 1)  # for zX mean
         self.fc_zX_logvar = nn.Linear(self.hidden_size, 1)  # for zX logvar
 
-        self.fc_zY_mean = nn.Linear(self.hidden_size, 1)  # for zY mean
-        self.fc_zY_logvar = nn.Linear(self.hidden_size, 1)  # for zY logvar
-
         self.fc_zR_mean = nn.Linear(self.hidden_size, 1)  # for zR mean
         self.fc_zR_logvar = nn.Linear(self.hidden_size, 1)  # for zR logvar
 
@@ -71,17 +67,14 @@ class Encoder(nn.Module):
                 nn.init.zeros_(param)
 
         # fc layers initialization
-        for layer in [self.fc_zX_mean, self.fc_zX_logvar, self.fc_zY_mean, self.fc_zY_logvar, self.fc_zR_mean, self.fc_zR_logvar]:
+        for layer in [self.fc_zX_mean, self.fc_zX_logvar, self.fc_zR_mean, self.fc_zR_logvar]:
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal_(layer.weight)
                 nn.init.zeros_(layer.bias)
 
         # set prior means for the latent variables
-        zX_prior_mean = (self.alpha_range_x[0] + self.alpha_range_x[1]) / 2
+        zX_prior_mean = (self.alpha_range[0] + self.alpha_range[1]) / 2
         nn.init.constant_(self.fc_zX_mean.bias, zX_prior_mean)  # set bias for zX mean
-
-        zY_prior_mean = (self.alpha_range_y[0] + self.alpha_range_y[1]) / 2
-        nn.init.constant_(self.fc_zY_mean.bias, zY_prior_mean)  # set bias for zY mean
 
         zR_prior_mean = (self.reaction_coeff_range[0] + self.reaction_coeff_range[1]) / 2
         nn.init.constant_(self.fc_zR_mean.bias, zR_prior_mean)  # set bias for zR mean
@@ -108,10 +101,7 @@ class Encoder(nn.Module):
         zX_mean = self.fc_zX_mean(z)
         zX_logvar = self.fc_zX_logvar(z)
 
-        zY_mean = self.fc_zY_mean(z)
-        zY_logvar = self.fc_zY_logvar(z)
-
         zR_mean = self.fc_zR_mean(z)
         zR_logvar = self.fc_zR_logvar(z)
 
-        return zX_mean, zX_logvar, zY_mean, zY_logvar, zR_mean, zR_logvar
+        return zX_mean, zX_logvar, zR_mean, zR_logvar

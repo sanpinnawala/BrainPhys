@@ -1,6 +1,0 @@
-Number       Noise          Monotonic Regularisation         individuals            observations
-base         False                   True                       100                     4
-1            True                    True                       100                     4
-2            True                    False                      100                     4
-3            False                   True                       1000                    4
-4            False                   True                       1000                    2
