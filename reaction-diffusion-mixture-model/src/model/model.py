@@ -37,7 +37,8 @@ class VAE(pl.LightningModule):
         self.monotonic_regularisation = hyperparams['monotonic_regularisation']
         self.reg_lambda = hyperparams['reg_lambda']
         self.categorical_encoder = CategoricalEncoder(hyperparams)
-        self.latent_encoders = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
+        self.latent_encoder = LatentEncoder(hyperparams)
+        # self.latent_encoders = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
         # self.ode_funcs = nn.ModuleList([ODEFunc(hyperparams) for k in range(hyperparams['n_components'])])
         self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams)])
         self.log_var = torch.nn.Parameter(torch.zeros(1))
@@ -82,7 +83,7 @@ class VAE(pl.LightningModule):
 
     @staticmethod
     def kl_divergence(mean, logvar, prior_mean, prior_logvar):
-        loss = - 0.5 * torch.sum(1 + logvar - prior_logvar - ((mean - prior_mean).pow(2) + logvar.exp()) / torch.exp(prior_logvar), dim=1)
+        loss = - 0.5 * torch.sum(1 + logvar - prior_logvar - ((mean - prior_mean).pow(2) + logvar.exp()) / torch.exp(prior_logvar))
         return loss
 
     @staticmethod
@@ -94,7 +95,7 @@ class VAE(pl.LightningModule):
     @staticmethod
     def gaussian_nll_loss(x, x_recon, log_var):
         var = torch.exp(log_var).expand_as(x)
-        loss = torch.sum(0.5 * (((x - x_recon) ** 2) / var + torch.log(2 * torch.pi * var)), dim=tuple(range(1, x.ndim)))
+        loss = torch.sum(0.5 * (((x - x_recon) ** 2) / var + torch.log(2 * torch.pi * var)))
         return loss
 
     def solve_ode(self, k, zX, zR, init_u, mask, t, total_time, time_points):
@@ -119,60 +120,47 @@ class VAE(pl.LightningModule):
         return y_seq[:, indices, :, :]
 
     def forward(self, x, x_mask, x_t):
+        b, t, h, w = x.shape
         init_u = x[:, 0, :, :]
         mask = x_mask[:, 0, :, :]
 
         logits = self.categorical_encoder(x, x_t)
         c = self.gumbel_softmax(logits, self.tau) # [B, 4]
 
-        x_recons, zX_means, zX_logvars, zR_means, zR_logvars, zXs, zRs = [], [], [], [], [], [], []
+        zX_mean, zX_logvar, zR_mean, zR_logvar = self.latent_encoder(c, x, x_t)
+
+        zX = self.reparameterize(zX_mean, zX_logvar)  # [B, 1]
+        zR = self.reparameterize(zR_mean, zR_logvar)
+
+        x_recons = []
 
         for k in range(self.n_components):
-            zX_mean, zX_logvar, zR_mean, zR_logvar = self.latent_encoders[k](x, x_t)
-
-            zX = self.reparameterize(zX_mean, zX_logvar)  # [B, 1]
-            zR = self.reparameterize(zR_mean, zR_logvar)
-
             x_recon = self.solve_ode(k, zX, zR, init_u, mask, self.predefined_t, self.total_time, self.time_points)  # [B, T, H, W]
-
             x_recons.append(x_recon)
-            zX_means.append(zX_mean)
-            zX_logvars.append(zX_logvar)
-            zR_means.append(zR_mean)
-            zR_logvars.append(zR_logvar)
-            zXs.append(zX)
-            zRs.append(zR)
         print(c)
-        return c, x, x_recons, zX_means, zX_logvars, zR_means, zR_logvars, zXs, zRs
+        return c, x, x_recons, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR
 
     def loss_function(self, outputs):
-        c, x, x_recons, zX_means, zX_logvars, zR_means, zR_logvars, zXs, zRs = outputs
+        c, x, x_recons, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR = outputs
         b = x.shape[0]
 
         recon_losses = torch.zeros(b, self.n_components, device=self.device)
         kl_zXs = torch.zeros(b, self.n_components, device=self.device)
         kl_zRs = torch.zeros(b, self.n_components, device=self.device)
 
-        for k in range(self.n_components):
-            zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range[0], self.alpha_range[1])
-            zR_prior_mean, zR_prior_logvar = self.log_normal_prior(self.reaction_coeff_range[0], self.reaction_coeff_range[1])
+        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range[0], self.alpha_range[1])
+        zR_prior_mean, zR_prior_logvar = self.log_normal_prior(self.reaction_coeff_range[0], self.reaction_coeff_range[1])
 
+        for k in range(self.n_components):
             # kl divergence
-            kl_zXs[:, k] = self.kl_divergence(zX_means[k], zX_logvars[k], zX_prior_mean, zX_prior_logvar)
-            kl_zRs[:, k] = self.kl_divergence(zR_means[k], zR_logvars[k], zR_prior_mean, zR_prior_logvar)
+            kl_zXs[:, k] = self.kl_divergence(zX_mean, zX_logvar, zX_prior_mean, zX_prior_logvar)
+            kl_zRs[:, k] = self.kl_divergence(zR_mean, zR_logvar, zR_prior_mean, zR_prior_logvar)
 
             # reconstruction loss
-            # recon_losses[:, k] = self.gaussian_nll_loss(x, x_recons[k], self.log_var)
+            recon_losses[:, k] = self.gaussian_nll_loss(x, x_recons[k], self.log_var)
 
-        # weighted sum
-        # recon_loss = torch.sum(c * recon_losses, dim=1).sum()
-
-        x_recons_stack = torch.stack(x_recons, dim=1)
-        c_expanded = c.view(b, self.n_components, *([1] * (x.dim() - 1)))
-        x_recon_avg = (c_expanded * x_recons_stack).sum(dim=1)
-
-        recon_loss = self.gaussian_nll_loss(x, x_recon_avg, self.log_var).sum()
-
+        # expectation over q(c|x)
+        recon_loss = torch.sum(c * recon_losses, dim=1).sum()
         kl_zX = torch.sum(c * kl_zXs, dim=1).sum()
         kl_zR = torch.sum(c * kl_zRs, dim=1).sum()
 
@@ -185,7 +173,7 @@ class VAE(pl.LightningModule):
         self.log('kl_loss', kl_loss)
         self.log('log_var', self.log_var)
 
-        return total_loss.sum()
+        return total_loss#.sum()
 
     def training_step(self, batch, batch_idx):
         x = batch['heat']
