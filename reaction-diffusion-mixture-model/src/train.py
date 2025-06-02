@@ -34,11 +34,6 @@ def main(config):
         mode=config['ckpt_mode']
     )
 
-    # if config['mode'] == 'baseline':
-        # baseline
-        # vae = Baseline(hyperparams=config)
-    # else:
-        # brainphys
     vae = VAE(hyperparams=config)
     data_module = HeatDataModule(hyperparams=config)
 
@@ -49,7 +44,7 @@ def main(config):
         precision=config['precision'],
         max_epochs=config['max_epochs'],
         profiler=config['profiler'],
-        logger=None,  # wandb_logger,
+        logger=wandb_logger,  # wandb_logger,
         log_every_n_steps=config['log_every_n_steps'],
         callbacks=[checkpoint_callback]
     )

@@ -2,7 +2,7 @@
 experiment: "reaction-diffusion-experiment"
 project: "reaction-diffusion"
 mode: "brainphys"
-batch_size: 2 # 1, 16
+batch_size: 4 # 1, 16
 num_samples: 1000 # 100 # num of individuals
 max_epochs: 200 # 400
 accelerator: "gpu"
@@ -17,7 +17,7 @@ log_model: "all"
 
 # checkpoints
 monitor: "val_loss"
-ckpt_filename: "best_model"
+ckpt_filename: "best_model-v4"
 save_top_k: 1
 ckpt_mode: "min"
 
@@ -41,7 +41,7 @@ noise: False # observational noise
 snr: 5.0 # signal-to-noise ratio
 
 # mixture model
-tau: 1.0
+tau_init: 10.0
 n_components: 2
 
 # model

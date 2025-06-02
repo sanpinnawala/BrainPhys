@@ -45,11 +45,11 @@ class BaseEncoder(nn.Module):
         self.fc_logits = nn.Linear(self.hidden_size, self.n_components)
 
         # fully connected layers for latent variables
-        self.fc_zX_mean = nn.Linear(self.hidden_size + self.n_components, 1)  # for zX mean
-        self.fc_zX_logvar = nn.Linear(self.hidden_size + self.n_components, 1)  # for zX logvar
+        self.fc_zX_mean = nn.Linear(self.hidden_size, 1)  # for zX mean
+        self.fc_zX_logvar = nn.Linear(self.hidden_size, 1)  # for zX logvar
 
-        self.fc_zR_mean = nn.Linear(self.hidden_size + self.n_components, 1)  # for zR mean
-        self.fc_zR_logvar = nn.Linear(self.hidden_size + self.n_components, 1)  # for zR logvar
+        self.fc_zR_mean = nn.Linear(self.hidden_size, 1)  # for zR mean
+        self.fc_zR_logvar = nn.Linear(self.hidden_size, 1)  # for zR logvar
 
         self.initialize_weights()
 
@@ -107,19 +107,18 @@ class CategoricalEncoder(BaseEncoder):
     def forward(self, x, x_t):
         z = super().forward(x, x_t)
 
-        logits = self.fc_logits(z)
+        logits = self.fc_logits(z) # [B, K]
         return logits
 
 
 class LatentEncoder(BaseEncoder):
-    def forward(self, c, x, x_t):
+    def forward(self, x, x_t):
         z = super().forward(x, x_t)
-        z = torch.cat((z, c), dim=1)
 
-        zX_mean = self.fc_zX_mean(z)
-        zX_logvar = self.fc_zX_logvar(z)
+        zX_mean = self.fc_zX_mean(z) # [B, 1]
+        zX_logvar = self.fc_zX_logvar(z) # [B, 1]
 
-        zR_mean = self.fc_zR_mean(z)
-        zR_logvar = self.fc_zR_logvar(z)
+        zR_mean = self.fc_zR_mean(z) # [B, 1]
+        zR_logvar = self.fc_zR_logvar(z) # [B, 1]
 
         return zX_mean, zX_logvar, zR_mean, zR_logvar
