@@ -4,7 +4,7 @@ project: "reaction-diffusion"
 mode: "brainphys"
 batch_size: 4 # 1, 16
 num_samples: 1000 # 100 # num of individuals
-max_epochs: 200 # 400
+max_epochs: 100 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
@@ -17,7 +17,7 @@ log_model: "all"
 
 # checkpoints
 monitor: "val_loss"
-ckpt_filename: "best_model-v4"
+ckpt_filename: "best_model"
 save_top_k: 1
 ckpt_mode: "min"
 
@@ -41,8 +41,9 @@ noise: False # observational noise
 snr: 5.0 # signal-to-noise ratio
 
 # mixture model
-tau_init: 10.0
-n_components: 2
+tau_init: 5.0
+tau_fin: 0.5
+n_components: 3
 
 # model
 monotonic_regularisation: False # monotonic regularisation

@@ -17,28 +17,28 @@ class VAE(pl.LightningModule):
         super(VAE, self).__init__()
         self.save_hyperparameters()
         self.hyperparams = hyperparams
-        self.alpha_range = hyperparams['alpha_range']
-        self.reaction_coeff_range = hyperparams['reaction_coeff_range']
-        self.total_space = hyperparams['total_space']
-        self.spatial_points = hyperparams['spatial_points']
-        self.total_time = hyperparams['total_time']
-        self.time_points = hyperparams['time_points']
-        self.predefined_t = hyperparams['predefined_t']
+        self.alpha_range = hyperparams['alpha_range']  # range for diffusion coefficient
+        self.reaction_coeff_range = hyperparams['reaction_coeff_range']  # range for reaction coefficient
+        self.total_space = hyperparams['total_space']  # spatial length
+        self.spatial_points = hyperparams['spatial_points']  # number of spatial discretisation points
+        self.total_time = hyperparams['total_time']  # time length
+        self.time_points = hyperparams['time_points']  # number of time discretisation points
+        self.predefined_t = hyperparams['predefined_t']  # observed time points
         self.max_epochs = hyperparams['max_epochs']
-        self.ode_method = hyperparams['ode']['method']
-        self.ode_rtol = hyperparams['ode']['rtol']
-        self.ode_atol = hyperparams['ode']['atol']
-        self.lr = hyperparams['adam']['lr']
+        self.ode_method = hyperparams['ode']['method']  # integration method
+        self.ode_rtol = hyperparams['ode']['rtol']  # relative tolerance
+        self.ode_atol = hyperparams['ode']['atol']  # absolute tolerance
+        self.lr = hyperparams['adam']['lr']  # learning rate
         self.weight_decay = hyperparams['adam']['weight_decay']
         self.betas = hyperparams['adam']['betas']
         self.amsgrad = hyperparams['adam']['amsgrad']
-        self.step_size = hyperparams['steplr']['step_size']
-        self.gamma = hyperparams['steplr']['gamma']
+        self.step_size = hyperparams['steplr']['step_size']  # step size for learning rate decay
+        self.gamma = hyperparams['steplr']['gamma']  # learning rate decay factor
         self.monotonic_regularisation = hyperparams['monotonic_regularisation']
         self.reg_lambda = hyperparams['reg_lambda']
         self.encoder = Encoder(hyperparams)
         self.ode_func = ODEFunc(hyperparams)
-        self.log_var = torch.nn.Parameter(torch.zeros(1))
+        self.log_var = torch.nn.Parameter(torch.zeros(1)) # learnable variance for gaussian negative log likelihood
         # test
         self.infer_samples = hyperparams['infer_samples']
         self.reconstruct = hyperparams['reconstruct']
@@ -77,6 +77,7 @@ class VAE(pl.LightningModule):
 
     @staticmethod
     def gaussian_nll_loss(x, x_recon, log_var):
+        # gaussian negative log likelihood
         var = torch.exp(log_var).expand_as(x)
         loss = torch.sum(0.5 * (((x - x_recon) ** 2) / var + torch.log(2 * torch.pi * var)))
         return loss
@@ -109,14 +110,17 @@ class VAE(pl.LightningModule):
         return mono_reg.sum()
 
     def solve_ode(self, zX, zR, init_u, mask, t, total_time, time_points):
+        # spatial grid
         x = torch.linspace(0., self.total_space, self.spatial_points, device=init_u.device)  # spatial domain
         y = torch.linspace(0., self.total_space, self.spatial_points, device=init_u.device)  # spatial domain
 
         dx = x[1] - x[0]
         dy = y[1] - y[0]
 
+        # fine time grid
         t_fine = torch.linspace(0., total_time, time_points, device=init_u.device)
         t = torch.tensor(t, device=t_fine.device, dtype=t_fine.dtype)
+        # time indices for t
         indices = torch.searchsorted(t_fine, t)
 
         def func(t, u):
@@ -124,20 +128,25 @@ class VAE(pl.LightningModule):
             return self.ode_func(u, mask, dx, dy, zX, zR)
 
         # solve ode
-        y_seq = odeint(func, init_u, t_fine, method=self.ode_method, rtol=self.ode_rtol, atol=self.ode_atol)
-        y_seq = y_seq.permute(1, 0, 2, 3)
+        y_seq = odeint(func, init_u, t_fine, method=self.ode_method, rtol=self.ode_rtol, atol=self.ode_atol) # [T, B, H, W]
+        y_seq = y_seq.permute(1, 0, 2, 3) # [B, T, H, W]
 
+        # [B, T_selected, H, W]
         return y_seq[:, indices, :, :]
 
     def forward(self, x, x_mask, x_t):
         zX_mean, zX_logvar, zR_mean, zR_logvar = self.encoder(x, x_t)
 
+        # sample from latent distribution
         zX = self.reparameterize(zX_mean, zX_logvar)  # [B, 1]
         zR = self.reparameterize(zR_mean, zR_logvar)
 
+        # initial image for each individual
         init_u = x[:, 0, :, :]
+        # mask for each individual
         mask = x_mask[:, 0, :, :]
 
+        # solve ode
         x_recon = self.solve_ode(zX, zR, init_u, mask, self.predefined_t, self.total_time, self.time_points)  # [B, T, H, W]
         # x_recon = x_recon + g_theta(x_recon)  # [B, T, H, W]
 

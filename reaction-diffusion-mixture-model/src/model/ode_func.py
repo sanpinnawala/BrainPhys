@@ -38,3 +38,17 @@ class ODEFunc2(BaseODEFunc):
 
         return du_dt
 
+class ODEFunc3(BaseODEFunc):
+    def forward(self, y, mask, dx, zX, zR):
+        du_dt = zX.unsqueeze(1) * self.mask_aware_laplacian(y, mask, dx)
+        du_dt += zR.unsqueeze(1) * y * (1 - y) * (1 - y)
+
+        return du_dt
+
+class ODEFunc4(BaseODEFunc):
+    def forward(self, y, mask, dx, zX, zR):
+        du_dt = zX.unsqueeze(1) * self.mask_aware_laplacian(y, mask, dx)
+        du_dt += zR.unsqueeze(1) * y.pow(2) * (1 - y)
+
+        return du_dt
+

@@ -8,7 +8,7 @@ from torchdiffeq import odeint
 import numpy as np
 
 from model.encoder import LatentEncoder, CategoricalEncoder
-from model.ode_func import ODEFunc1, ODEFunc2
+from model.ode_func import ODEFunc1, ODEFunc2, ODEFunc3, ODEFunc4
 from utils.plot import val_plot_recon, test_plot_recon, test_plot_param, test_plot_extrap
 
 
@@ -37,11 +37,14 @@ class VAE(pl.LightningModule):
         self.categorical_encoder = CategoricalEncoder(hyperparams)
         # self.latent_encoder = LatentEncoder(hyperparams)
         self.latent_encoders = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
-        self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams)])
+        self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams), ODEFunc4(hyperparams)])
         self.log_var = torch.nn.Parameter(torch.zeros(1)) # learnable variance for gaussian negative log likelihood
         # mixture model
         self.n_components = hyperparams['n_components'] # number of mixture components
-        self.log_tau = torch.nn.Parameter(torch.log(torch.tensor(hyperparams['tau_init']))) # learnable gumbel temperature
+        self.tau_max = hyperparams['tau_init']
+        self.tau_min = hyperparams['tau_fin']
+        self.tau = hyperparams['tau_init']
+        # self.log_tau = torch.nn.Parameter(torch.log(torch.tensor(hyperparams['tau_init']))) # learnable gumbel temperature
         # test config
         self.infer_samples = hyperparams['infer_samples']
         self.reconstruct = hyperparams['reconstruct']
@@ -54,9 +57,7 @@ class VAE(pl.LightningModule):
         self.data_dir = hyperparams['data_dir']
 
     @staticmethod
-    def gumbel_softmax(logits, log_tau):
-        # temperature parameter controlling smoothness
-        tau = torch.exp(log_tau).clamp(min=1e-4, max=10.0)
+    def gumbel_softmax(logits, tau):
         # gumbel noise
         gumbel = -torch.log(-torch.log(torch.rand_like(logits) + 1e-20) + 1e-20)
         # gumbel-softmax trick
@@ -104,7 +105,6 @@ class VAE(pl.LightningModule):
     def solve_ode(self, k, zX, zR, init_u, mask, t, total_time, time_points):
         # spatial grid
         x = torch.linspace(0., self.total_space, self.spatial_points, device=init_u.device)  # spatial domain
-
         dx = x[1] - x[0]
 
         # fine time grid
@@ -135,7 +135,7 @@ class VAE(pl.LightningModule):
 
         logits = self.categorical_encoder(x, x_t)
         # component weights sampled from the categorical distribution over k components
-        c = self.gumbel_softmax(logits, self.log_tau) # [B, K]
+        c = self.gumbel_softmax(logits, self.tau) # [B, K]
 
         # for outputs from each of the k component
         x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all = [], [], [], [], [], [], []
@@ -164,6 +164,9 @@ class VAE(pl.LightningModule):
         return c, x, x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all
 
     def loss_function(self, outputs):
+        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range[0], self.alpha_range[1])
+        zR_prior_mean, zR_prior_logvar = self.log_normal_prior(self.reaction_coeff_range[0], self.reaction_coeff_range[1])
+
         c, x, x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all = outputs
         batch_size = x.shape[0]
 
@@ -173,9 +176,6 @@ class VAE(pl.LightningModule):
         kl_zR_all = torch.zeros(batch_size, self.n_components, device=self.device)
 
         for k in range(self.n_components):
-            zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range[0], self.alpha_range[1])
-            zR_prior_mean, zR_prior_logvar = self.log_normal_prior(self.reaction_coeff_range[0], self.reaction_coeff_range[1])
-
             # kl divergence
             kl_zX_all[:, k] = self.kl_divergence(zX_mean_all[k], zX_logvar_all[k], zX_prior_mean, zX_prior_logvar)
             kl_zR_all[:, k] = self.kl_divergence(zR_mean_all[k], zR_logvar_all[k], zR_prior_mean, zR_prior_logvar)
@@ -197,7 +197,8 @@ class VAE(pl.LightningModule):
         self.log('recon_loss', recon_loss)
         self.log('kl_loss', kl_loss)
         self.log('log_var', self.log_var)
-        self.log('tau', torch.exp(self.log_tau))
+        self.log('tau', self.tau)
+        self.log('c_entropy', (-c * torch.log(c + 1e-8)).sum(dim=1).mean() / np.log(self.n_components))
 
         return total_loss
 
@@ -253,22 +254,28 @@ class VAE(pl.LightningModule):
                 c, _, x_recon, _, _, _, _, _, _ = self(x, x_mask, x_t)
                 x_recon_stack = torch.stack(x_recon, dim=0).permute(1, 0, 2, 3, 4)
                 c_idx = torch.argmax(c, dim=1)  # [B]
-                raise Exception(c_idx)
+                #raise Exception(c_idx)
                 x_recon_best = x_recon_stack[torch.arange(c_idx.shape[0]), c_idx]  # shape: [B, T, H, W]
                 recon_samples.append(x_recon_best.detach().cpu().numpy())
             test_plot_recon(x, x_t, recon_samples, self.artefacts)
 
         # parameter analysis
         if self.param_analysis:
-            _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
-            test_plot_param(zX, zR, self.artefacts, self.data_dir)
+            c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
+            zX_stack = torch.stack(zX, dim=0).permute(1, 0, 2)
+            zR_stack = torch.stack(zR, dim=0).permute(1, 0, 2)
+            c_idx = torch.argmax(c, dim=1)  # [B]
+            zX_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
+            zR_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
+            test_plot_param(zX_best, zR_best, self.artefacts, self.data_dir)
 
         # interpolation and extrapolation
         if self.extrapolate:
-            _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
+            c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
             full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
-            x_extrap = self.solve_ode(0, zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
-            test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
+            c_idx = torch.argmax(c, dim=1)  # [B]
+            #x_extrap = self.solve_ode(c_idx, zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
+            #test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, betas=(self.betas[0], self.betas[1]), amsgrad=self.amsgrad)
@@ -277,4 +284,6 @@ class VAE(pl.LightningModule):
         return {'optimizer': optimizer,'lr_scheduler': {'scheduler': scheduler, 'interval': 'epoch', 'frequency': 1}}
 
 
-
+    def on_train_epoch_end(self):
+        decay_rate = torch.log(torch.tensor(self.tau_min / self.tau_max))
+        self.tau = self.tau_max * torch.exp(decay_rate * (self.trainer.current_epoch / self.max_epochs))
