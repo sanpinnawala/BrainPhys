@@ -8,7 +8,7 @@ from torchdiffeq import odeint
 import numpy as np
 
 from model.encoder import LatentEncoder, CategoricalEncoder
-from model.ode_func import ODEFunc1, ODEFunc2, ODEFunc3, ODEFunc4
+from model.ode_func import ODEFunc1, ODEFunc2, ODEFunc3
 from utils.plot import val_plot_recon, test_plot_recon, test_plot_param, test_plot_extrap
 
 
@@ -37,7 +37,7 @@ class VAE(pl.LightningModule):
         self.categorical_encoder = CategoricalEncoder(hyperparams)
         # self.latent_encoder = LatentEncoder(hyperparams)
         self.latent_encoders = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
-        self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams), ODEFunc4(hyperparams)])
+        self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams), ODEFunc3(hyperparams)])
         self.log_var = torch.nn.Parameter(torch.zeros(1)) # learnable variance for gaussian negative log likelihood
         # mixture model
         self.n_components = hyperparams['n_components'] # number of mixture components
@@ -270,10 +270,10 @@ class VAE(pl.LightningModule):
             test_plot_param(zX_best, zR_best, self.artefacts, self.data_dir)
 
         # interpolation and extrapolation
-        if self.extrapolate:
-            c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
-            full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
-            c_idx = torch.argmax(c, dim=1)  # [B]
+        #if self.extrapolate:
+            #c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
+            #full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
+            #c_idx = torch.argmax(c, dim=1)  # [B]
             #x_extrap = self.solve_ode(c_idx, zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
             #test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
 

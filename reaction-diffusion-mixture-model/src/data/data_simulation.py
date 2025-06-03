@@ -48,6 +48,7 @@ def generate_single_sample(hyperparams, mask):
     reaction_coeff_range = hyperparams['reaction_coeff_range']
     noise = hyperparams['noise']
     snr = hyperparams['snr']
+    mixture = hyperparams['mixture']
 
     x = np.linspace(0., total_space, spatial_points)  # spatial domain
     y = np.linspace(0., total_space, spatial_points)  # spatial domain
@@ -78,27 +79,29 @@ def generate_single_sample(hyperparams, mask):
     # initial conditions
     init_u = (initial_tau * mask).flatten()
 
-    def laplace_x(y, dx):
-        kernel = np.array([[1, -2, 1]])
-        return convolve(y, kernel, mode='reflect') / dx ** 2
-
-    def laplace_y(y, dy):
-        kernel = np.array([[1], [-2], [1]])
-        return convolve(y, kernel, mode='reflect') / dy ** 2
+    # for selecting a pde model
+    if mixture:
+        model_index = np.random.choice(3)
+    else:
+        model_index = 0
 
     def heat_ode(t, u):
         # reshape the 2d grid into a vector
         u_reshaped = u.reshape((spatial_points, spatial_points))
-
-        # du_dt_x = alpha * laplace_x(u_reshaped, dx)
-        # du_dt_y = alpha * laplace_y(u_reshaped, dy)
-
         # du_dt = du_dt_x + du_dt_y
         du_dt = alpha * (mask_aware_laplacian(u_reshaped, mask, dx))
 
         # reaction term
         if reaction:
-            du_dt += reaction_coeff * u_reshaped * (1 - u_reshaped)
+            if mixture:
+                if model_index == 1:
+                    du_dt += reaction_coeff * u_reshaped * (1 - u_reshaped) ** 2
+                elif model_index == 2:
+                    du_dt += reaction_coeff * u_reshaped ** 2 * (1 - u_reshaped)
+                else:
+                    du_dt += reaction_coeff * u_reshaped * (1 - u_reshaped)
+            else:
+                du_dt += reaction_coeff * u_reshaped * (1 - u_reshaped)
 
         return du_dt.flatten()
 
@@ -122,7 +125,7 @@ def generate_single_sample(hyperparams, mask):
     else:
         normalised_heat_map = (heat_map - heat_map.min()) / (heat_map.max() - heat_map.min())
 
-    params = (alpha, reaction_coeff)
+    params = (alpha, reaction_coeff, model_index)
     return normalised_heat_map, heat_map_mask, predefined_t, params
 
 def generate_multiple_samples(hyperparams, num):
