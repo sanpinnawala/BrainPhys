@@ -4,12 +4,13 @@ project: "reaction-diffusion"
 mode: "brainphys"
 batch_size: 4 # 1, 16
 num_samples: 1000 # 100 # num of individuals
-max_epochs: 400 # 400
+max_epochs: 200 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
+seed: 42
 
 # log
 log_every_n_steps: 5
@@ -17,7 +18,7 @@ log_model: "all"
 
 # checkpoints
 monitor: "val_loss"
-ckpt_filename: "best_model"
+ckpt_filename: "best_model-fc"
 save_top_k: 1
 ckpt_mode: "min"
 
@@ -25,8 +26,8 @@ ckpt_mode: "min"
 alpha_range:
   - 0.01
   - 1.0
-total_space: 49.0 # 149.0
-spatial_points: 50 # 150  # grid size (HxW)
+total_space: 31.0 # 149.0
+spatial_points: 32 # 150  # grid size (HxW)
 total_time: 24.0
 time_points: 25
 predefined_t: # observation timepoints
@@ -42,8 +43,6 @@ snr: 5.0 # signal-to-noise ratio
 mixture: True
 
 # mixture model
-tau_init: 5.0
-tau_fin: 0.5
 n_components: 3
 
 # model
@@ -121,6 +120,6 @@ extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/mix-data/"
+ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/softmax/"
 data_dir: "/app/reaction-diffusion-mixture-model/data/mix-data/"
-artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/mix-data/"
+artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/softmax/"

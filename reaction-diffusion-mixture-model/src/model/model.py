@@ -7,7 +7,7 @@ import wandb
 from torchdiffeq import odeint
 import numpy as np
 
-from model.encoder import LatentEncoder, CategoricalEncoder
+from model.encoder import BaseEncoder, LatentEncoder, CategoricalEncoder
 from model.ode_func import ODEFunc1, ODEFunc2, ODEFunc3
 from utils.plot import val_plot_recon, test_plot_recon, test_plot_param, test_plot_extrap
 
@@ -35,16 +35,12 @@ class VAE(pl.LightningModule):
         self.step_size = hyperparams['steplr']['step_size'] # step size for learning rate decay
         self.gamma = hyperparams['steplr']['gamma'] # learning rate decay factor
         self.categorical_encoder = CategoricalEncoder(hyperparams)
-        # self.latent_encoder = LatentEncoder(hyperparams)
-        self.latent_encoders = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
+        self.base_encoder = BaseEncoder(hyperparams)
+        self.latent_heads = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
         self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams), ODEFunc3(hyperparams)])
         self.log_var = torch.nn.Parameter(torch.zeros(1)) # learnable variance for gaussian negative log likelihood
         # mixture model
         self.n_components = hyperparams['n_components'] # number of mixture components
-        self.tau_max = hyperparams['tau_init']
-        self.tau_min = hyperparams['tau_fin']
-        self.tau = hyperparams['tau_init']
-        # self.log_tau = torch.nn.Parameter(torch.log(torch.tensor(hyperparams['tau_init']))) # learnable gumbel temperature
         # test config
         self.infer_samples = hyperparams['infer_samples']
         self.reconstruct = hyperparams['reconstruct']
@@ -55,14 +51,6 @@ class VAE(pl.LightningModule):
         self.extrap_points = hyperparams['extrap_points']
         self.artefacts = hyperparams['artefacts_dir']
         self.data_dir = hyperparams['data_dir']
-
-    @staticmethod
-    def gumbel_softmax(logits, tau):
-        # gumbel noise
-        gumbel = -torch.log(-torch.log(torch.rand_like(logits) + 1e-20) + 1e-20)
-        # gumbel-softmax trick
-        c = F.softmax((logits + gumbel)/tau, dim=-1)
-        return c
 
     @staticmethod
     def reparameterize(mean, logvar):
@@ -79,10 +67,10 @@ class VAE(pl.LightningModule):
         mean = (range_min + range_max) / 2  # log space mean
         var = ((range_max - range_min) ** 2) / 16  # log space variance
 
-        mean_updated = np.log(mean ** 2 / np.sqrt(var + mean ** 2))  # normal space mean
-        var_updated = np.log(1 + (var / mean ** 2))  # normal space variance
+        mean_updated = torch.log(mean ** 2 / torch.sqrt(var + mean ** 2))  # normal space mean
+        var_updated = torch.log(1 + (var / mean ** 2))  # normal space variance
 
-        return torch.tensor(mean_updated), torch.log(torch.tensor(var_updated))
+        return mean_updated, torch.log(var_updated)
 
     @staticmethod
     def kl_divergence(mean, logvar, prior_mean, prior_logvar):
@@ -133,17 +121,21 @@ class VAE(pl.LightningModule):
         # mask for each individual
         mask = x_mask[:, 0, :, :] # [B, H, W]
 
-        logits = self.categorical_encoder(x, x_t)
-        # component weights sampled from the categorical distribution over k components
-        c = self.gumbel_softmax(logits, self.tau) # [B, K]
-
         # for outputs from each of the k component
         x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all = [], [], [], [], [], [], []
 
+        # component weights
+        logits = self.categorical_encoder(x, x_t) # [B, K]
+        c = F.softmax(logits, dim=-1)
+        # c = F.gumbel_softmax(logits, tau=0.5, hard=False)
+
+        # shared encoder
+        shared_z = self.base_encoder(x, x_t)
+
         # for each component in mixture model
         for k in range(self.n_components):
-            latent_encoder = self.latent_encoders[k]
-            zX_mean, zX_logvar, zR_mean, zR_logvar = latent_encoder(x, x_t)
+            latent_head = self.latent_heads[k]
+            zX_mean, zX_logvar, zR_mean, zR_logvar = latent_head(shared_z)
 
             # sample from latent distribution
             zX = self.reparameterize(zX_mean, zX_logvar)  # [B, 1]
@@ -164,8 +156,8 @@ class VAE(pl.LightningModule):
         return c, x, x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all
 
     def loss_function(self, outputs):
-        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(self.alpha_range[0], self.alpha_range[1])
-        zR_prior_mean, zR_prior_logvar = self.log_normal_prior(self.reaction_coeff_range[0], self.reaction_coeff_range[1])
+        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(torch.tensor(self.alpha_range[0]), torch.tensor(self.alpha_range[1]))
+        zR_prior_mean, zR_prior_logvar = self.log_normal_prior(torch.tensor(self.reaction_coeff_range[0]), torch.tensor(self.reaction_coeff_range[1]))
 
         c, x, x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all = outputs
         batch_size = x.shape[0]
@@ -197,7 +189,6 @@ class VAE(pl.LightningModule):
         self.log('recon_loss', recon_loss)
         self.log('kl_loss', kl_loss)
         self.log('log_var', self.log_var)
-        self.log('tau', self.tau)
         self.log('c_entropy', (-c * torch.log(c + 1e-8)).sum(dim=1).mean() / np.log(self.n_components))
 
         return total_loss
@@ -266,8 +257,8 @@ class VAE(pl.LightningModule):
             zR_stack = torch.stack(zR, dim=0).permute(1, 0, 2)
             c_idx = torch.argmax(c, dim=1)  # [B]
             zX_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
-            zR_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
-            test_plot_param(zX_best, zR_best, self.artefacts, self.data_dir)
+            zR_best = zR_stack[torch.arange(c_idx.shape[0]), c_idx]
+            test_plot_param(c_idx, zX_best, zR_best, self.artefacts, self.data_dir)
 
         # interpolation and extrapolation
         #if self.extrapolate:
@@ -283,7 +274,3 @@ class VAE(pl.LightningModule):
 
         return {'optimizer': optimizer,'lr_scheduler': {'scheduler': scheduler, 'interval': 'epoch', 'frequency': 1}}
 
-
-    def on_train_epoch_end(self):
-        decay_rate = torch.log(torch.tensor(self.tau_min / self.tau_max))
-        self.tau = self.tau_max * torch.exp(decay_rate * (self.trainer.current_epoch / self.max_epochs))

@@ -7,6 +7,7 @@ class ODEFunc(nn.Module):
     def __init__(self, hyperparams):
         super(ODEFunc, self).__init__()
         self.spatial_points = hyperparams['spatial_points']
+        self.learn_reaction = hyperparams['learn_reaction']
 
         self.mlp = nn.Sequential(
             nn.Linear(self.spatial_points * self.spatial_points, self.spatial_points * self.spatial_points),
@@ -84,10 +85,13 @@ class ODEFunc(nn.Module):
         # du_dt += zR.unsqueeze(1) * y * (1-y)
 
         # learnable reaction term
-        interior_mask = self.interior_mask(mask)
-        mlp_in = (interior_mask * y).view(batch_size, -1).unsqueeze(1)
-        mlp_out = self.mlp(mlp_in).view(batch_size, h, w)
-        mlp_out = interior_mask * mlp_out
-        du_dt += zR.unsqueeze(1) * mlp_out
+        if self.learn_reaction:
+            interior_mask = self.interior_mask(mask)
+            mlp_in = (interior_mask * y).view(batch_size, -1).unsqueeze(1)
+            mlp_out = self.mlp(mlp_in).view(batch_size, h, w)
+            mlp_out = interior_mask * mlp_out
+            du_dt += zR.unsqueeze(1) * mlp_out
+        else:
+            du_dt += zR.unsqueeze(1) * y * (1 - y)
 
         return du_dt

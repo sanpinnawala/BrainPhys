@@ -10,6 +10,7 @@ strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
+seed: 21 #1234, 42, 21, 8, 0
 
 # log
 log_every_n_steps: 5
@@ -41,6 +42,7 @@ noise: False # observational noise
 snr: 5.0 # signal-to-noise ratio
 
 # model
+learn_reaction: False
 monotonic_regularisation: False # monotonic regularisation
 reg_lambda: 1.0
 adam:
@@ -115,6 +117,6 @@ extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion/checkpoints/rd-data/"
+ckpt_dir: "/app/reaction-diffusion/checkpoints/seed-21/"
 data_dir: "/app/reaction-diffusion/data/rd-data/"
-artefacts_dir: "/app/reaction-diffusion/artefacts/rd-data/"
+artefacts_dir: "/app/reaction-diffusion/artefacts/seed-21/"

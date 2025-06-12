@@ -18,7 +18,7 @@ from model.model import VAE
 
 def main(config):
     wandb.finish()
-    pl.seed_everything(42, workers=True)
+    pl.seed_everything(config['seed'], workers=True)
 
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"{config['experiment']}_{timestamp}"

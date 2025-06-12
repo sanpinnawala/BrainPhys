@@ -7,6 +7,7 @@ import imageio
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import pandas as pd
 from utils.analysis import get_sample
+import os
 
 def plot_recon(x, x_t, x_recon, path):
     n_cols = len(x_t)  # number of timepoints to plot
@@ -96,22 +97,35 @@ def plot_uncertainty(x, recons_stacked, cross_section_idx, path):
     fig.write_image(path)
 
 
-def plot_hist(zX, zR, param_path, path):
-    learned_values = np.hstack([zX.detach().cpu().numpy(), zR.detach().cpu().numpy()])
+def plot_hist(c_idx, zX, zR, param_path, path):
+    base_path, ext = os.path.splitext(path)
+
+    learned_values = np.hstack([
+        zX.detach().cpu().numpy(),
+        zR.detach().cpu().numpy(),
+        c_idx.detach().cpu().numpy().reshape(-1, 1)
+    ])
     true_values = np.load(param_path)
-    true_values_stacked = np.column_stack([true_values[:, 0], true_values[:, 1]])
+    # raise Exception(true_values[:, 2])
+    true_values_stacked = np.column_stack([true_values[:, 0], true_values[:, 1], true_values[:, 2]])
 
     errors = learned_values - true_values_stacked
 
-    df = pd.DataFrame(errors, columns=['zX', 'zR'])
-    df_melted = df.melt(var_name='Parameter', value_name='Error')
-    custom_colors = [px.colors.sequential.Plasma[0], 'rgba(229,123,2,1)']
+    df_c = pd.DataFrame(errors[:, 2], columns=["c"])
+    df_z = pd.DataFrame(errors[:, :2], columns=["zX", "zR"])
 
-    fig = px.histogram(df_melted, x="Error", color="Parameter", marginal="box", nbins=50, opacity=0.5,
-                       color_discrete_sequence=custom_colors, barmode="overlay")
-    fig.update_layout(yaxis_title="Count", font=dict(size=18))
+    color_c = [px.colors.sequential.Plasma[3]]
+    color_z = [px.colors.sequential.Plasma[0], "rgba(229,123,2,1)"]
 
-    fig.write_image(path)
+    df_c_melted = df_c.melt(var_name="Parameter", value_name="Error")
+    fig_c = px.histogram(df_c_melted, x="Error", color="Parameter", marginal="box", nbins=50, opacity=0.5, color_discrete_sequence=color_c, barmode="overlay")
+    fig_c.update_layout(yaxis_title="Count", font=dict(size=18))
+    fig_c.write_image(f"{base_path}_c.png")
+
+    df_z_melted = df_z.melt(var_name="Parameter", value_name="Error")
+    fig_z = px.histogram(df_z_melted, x="Error", color="Parameter", marginal="box", nbins=50, opacity=0.5, color_discrete_sequence=color_z, barmode="overlay")
+    fig_z.update_layout(yaxis_title="Count", font=dict(size=18))
+    fig_z.write_image(f"{base_path}_latent.png")
 
 
 def plot_extrap(full_t, x_extrap, param_path, path):
@@ -221,8 +235,8 @@ def test_plot_recon(x, x_t, recon_samples, dir):
     plot_recon(x, x_t, mean_recon, path=f"{dir}/test_recon.png")
     plot_uncertainty(x, recons_stacked, cross_section_idx= idx, path=f"{dir}/test_uncert.png")
 
-def test_plot_param(zX, zR, dir, data_dir):
-    plot_hist(zX, zR, param_path=f"{data_dir}/test_param.npy", path=f"{dir}/test_param_hist.png")
+def test_plot_param(c_idx, zX, zR, dir, data_dir):
+    plot_hist(c_idx, zX, zR, param_path=f"{data_dir}/test_param.npy", path=f"{dir}/test_param_hist.png")
     #plot_hist_adni(zX, path=f"{dir}/test_param_hist.png")
 
 def test_plot_extrap(full_t, x_extrap, dir, data_dir):
