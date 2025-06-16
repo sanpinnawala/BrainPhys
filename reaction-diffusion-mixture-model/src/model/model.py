@@ -127,7 +127,6 @@ class VAE(pl.LightningModule):
         # component weights
         logits = self.categorical_encoder(x, x_t) # [B, K]
         c = F.softmax(logits, dim=-1)
-        # c = F.gumbel_softmax(logits, tau=0.5, hard=False)
 
         # shared encoder
         shared_z = self.base_encoder(x, x_t)
@@ -264,8 +263,12 @@ class VAE(pl.LightningModule):
         #if self.extrapolate:
             #c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
             #full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
+            #zX_stack = torch.stack(zX, dim=0).permute(1, 0, 2)
+            #zR_stack = torch.stack(zR, dim=0).permute(1, 0, 2)
             #c_idx = torch.argmax(c, dim=1)  # [B]
-            #x_extrap = self.solve_ode(c_idx, zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
+            #zX_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
+            #zR_best = zR_stack[torch.arange(c_idx.shape[0]), c_idx]
+            #x_extrap = self.solve_ode(c_idx, zX_best, zR_best, init_u, mask, full_t, self.extrap_time, self.extrap_points)
             #test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
 
     def configure_optimizers(self):

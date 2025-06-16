@@ -4,13 +4,13 @@ project: "reaction-diffusion"
 mode: "brainphys"
 batch_size: 4 # 1, 16
 num_samples: 1000 # 100 # num of individuals
-max_epochs: 200 # 400
+max_epochs: 250 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
-seed: 42
+seed: 31415 # 0, 8, 21, 42, 1234, seed-31415
 
 # log
 log_every_n_steps: 5
@@ -18,7 +18,7 @@ log_model: "all"
 
 # checkpoints
 monitor: "val_loss"
-ckpt_filename: "best_model-fc"
+ckpt_filename: "best_model"
 save_top_k: 1
 ckpt_mode: "min"
 
@@ -120,6 +120,6 @@ extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/softmax/"
+ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/seed-31415/"
 data_dir: "/app/reaction-diffusion-mixture-model/data/mix-data/"
-artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/softmax/"
+artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/seed-31415/"

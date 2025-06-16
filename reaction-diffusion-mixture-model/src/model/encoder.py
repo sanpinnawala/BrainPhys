@@ -101,12 +101,6 @@ class LatentEncoder(nn.Module):
         self.alpha_range = hyperparams['alpha_range']
         self.reaction_coeff_range = hyperparams['reaction_coeff_range']
 
-        self.mlp = nn.Sequential(
-                nn.Linear(self.hidden_size, self.hidden_size),
-                nn.LeakyReLU(negative_slope=0.02),
-                nn.Linear(self.hidden_size, self.hidden_size)
-        )
-
         # fully connected layers for latent variables
         self.fc_zX_mean = nn.Linear(self.hidden_size, 1)  # for zX mean
         self.fc_zX_logvar = nn.Linear(self.hidden_size, 1)  # for zX logvar
@@ -126,7 +120,7 @@ class LatentEncoder(nn.Module):
 
     def initialize_weights(self):
         # fc layers initialization
-        for layer in [self.mlp, self.fc_zX_mean, self.fc_zX_logvar, self.fc_zR_mean, self.fc_zR_logvar]:
+        for layer in [self.fc_zX_mean, self.fc_zX_logvar, self.fc_zR_mean, self.fc_zR_logvar]:
             if isinstance(layer, nn.Linear):
                 nn.init.xavier_normal_(layer.weight)
                 nn.init.zeros_(layer.bias)
@@ -139,8 +133,6 @@ class LatentEncoder(nn.Module):
         nn.init.constant_(self.fc_zR_mean.bias, zR_prior_mean)  # set bias for zR mean
 
     def forward(self, z):
-        #z = self.mlp(z)
-
         zX_mean = self.fc_zX_mean(z) # [B, 1]
         zX_logvar = self.fc_zX_logvar(z) # [B, 1]
 
