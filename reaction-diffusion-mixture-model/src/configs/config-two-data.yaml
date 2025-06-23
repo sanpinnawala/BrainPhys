@@ -4,12 +4,13 @@ project: "reaction-diffusion"
 mode: "brainphys"
 batch_size: 4 # 1, 16
 num_samples: 1000 # 100 # num of individuals
-max_epochs: 100 # 400
+max_epochs: 250 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
+seed: 42 # 0, 8, 42, 1234, 31415
 
 # log
 log_every_n_steps: 5
@@ -21,12 +22,15 @@ ckpt_filename: "best_model"
 save_top_k: 1
 ckpt_mode: "min"
 
+# mixture model
+n_components: 3
+
 # data
 alpha_range:
   - 0.01
   - 1.0
-total_space: 49.0 # 149.0
-spatial_points: 50 # 150  # grid size (HxW)
+total_space: 31.0 # 149.0
+spatial_points: 32 # 150  # grid size (HxW)
 total_time: 24.0
 time_points: 25
 predefined_t: # observation timepoints
@@ -39,11 +43,7 @@ reaction_coeff_range:
   - 0.1
 noise: False # observational noise
 snr: 5.0 # signal-to-noise ratio
-
-# mixture model
-tau_init: 5.0
-tau_fin: 0.5
-n_components: 3
+mixture: True
 
 # model
 monotonic_regularisation: False # monotonic regularisation
@@ -120,6 +120,6 @@ extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/rd-data/"
-data_dir: "/app/reaction-diffusion-mixture-model/data/rd-data/"
-artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/rd-data/"
+ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/mix-data/"
+data_dir: "/app/reaction-diffusion-mixture-model/data/mix-data/"
+artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/mix-data/"
