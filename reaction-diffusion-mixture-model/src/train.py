@@ -16,14 +16,15 @@ from model.model import VAE
 # from baseline.baseline import Baseline
 
 
-def main(config):
+def main(config, seed):
     wandb.finish()
-    pl.seed_everything(config['seed'], workers=True)
+    #pl.seed_everything(config['seed'], workers=True)
+    pl.seed_everything(seed, workers=True)
 
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"{config['experiment']}_{timestamp}"
 
-    ckpt_path = f"{config['ckpt_dir']}"
+    ckpt_path = f"{config['ckpt_dir']}/seed-{seed}"
 
     wandb_logger = WandbLogger(project=config['project'], log_model=config['log_model'], config=config, name=run_name)
     checkpoint_callback = ModelCheckpoint(
@@ -44,7 +45,7 @@ def main(config):
         precision=config['precision'],
         max_epochs=config['max_epochs'],
         profiler=config['profiler'],
-        logger=wandb_logger,  # wandb_logger,
+        logger=None, #wandb_logger,
         log_every_n_steps=config['log_every_n_steps'],
         callbacks=[checkpoint_callback]
     )
@@ -56,6 +57,7 @@ def main(config):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='path to config')
+    parser.add_argument('--seed', type=int, required=True, help='seed value')
     args = parser.parse_args()
 
     # load config
@@ -66,4 +68,4 @@ if __name__ == '__main__':
         print("Generating synthetic data...")
         generate_synthetic_data(config)
 
-    main(config)
+    main(config, args.seed)

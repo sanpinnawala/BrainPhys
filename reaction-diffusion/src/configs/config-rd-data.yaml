@@ -2,15 +2,15 @@
 experiment: "reaction-diffusion-experiment"
 project: "reaction-diffusion"
 mode: "brainphys"
-batch_size: 8 # 1, 16
+batch_size: 16 # 1, 16
 num_samples: 1000 # 100 # num of individuals
-max_epochs: 200 # 400
+max_epochs: 250 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
-seed: 21 #1234, 42, 21, 8, 0
+seed: 42
 
 # log
 log_every_n_steps: 5
@@ -103,7 +103,7 @@ dconv:
   groupnorm:
     groups: 4
 
-# test
+# seed-31415
 test_data_samples: 100
 reconstruct: True
 infer_samples: 100 # to quantify uncertainty
@@ -112,11 +112,11 @@ extrapolate: True # interpolation and extrapolation
 extrap_t:
   - 18.0
   - 36.0
-  - 60.0
+ # - 60.0
 extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion/checkpoints/seed-21/"
+ckpt_dir: "/app/reaction-diffusion/checkpoints/sinusoidal/"
 data_dir: "/app/reaction-diffusion/data/rd-data/"
-artefacts_dir: "/app/reaction-diffusion/artefacts/seed-21/"
+artefacts_dir: "/app/reaction-diffusion/artefacts/test/"

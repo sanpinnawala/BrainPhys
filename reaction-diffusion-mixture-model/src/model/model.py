@@ -39,9 +39,10 @@ class VAE(pl.LightningModule):
         self.latent_heads = nn.ModuleList([LatentEncoder(hyperparams) for k in range(hyperparams['n_components'])])
         self.ode_funcs = nn.ModuleList([ODEFunc1(hyperparams), ODEFunc2(hyperparams), ODEFunc3(hyperparams)])
         self.log_var = torch.nn.Parameter(torch.zeros(1)) # learnable variance for gaussian negative log likelihood
+        self.log_var = torch.nn.Parameter(torch.tensor([-2.0]))
         # mixture model
         self.n_components = hyperparams['n_components'] # number of mixture components
-        # test config
+        # seed-31415 config
         self.infer_samples = hyperparams['infer_samples']
         self.reconstruct = hyperparams['reconstruct']
         self.param_analysis = hyperparams['param_analysis']
@@ -110,22 +111,29 @@ class VAE(pl.LightningModule):
 
         # solve ode
         y_seq = odeint(func, init_u, t_fine, method=self.ode_method, rtol=self.ode_rtol, atol=self.ode_atol) # [T, B, H, W]
-        y_seq = y_seq.permute(1, 0, 2, 3) # [B, T, H, W]
+        y_seq = y_seq.permute(1, 0, 2, 3)  # [B, T, H, W]
 
+        # time indices for x_t
+        # indices = torch.searchsorted(t_fine.unsqueeze(0).repeat(x_t.shape[0], 1), x_t)
+        # batch indices aligned with indices
+        # batch_idx = torch.arange(indices.shape[0], device=indices.device).unsqueeze(1).expand(indices.shape[0], indices.shape[1])
+
+        # y_selected = y_seq[batch_idx, indices]   # [B, T_selected, H, W]
         # [B, T_selected, H, W]
-        return y_seq[:, indices, :, :]
+        y_selected = y_seq[:, indices, :, :]
+        return y_selected
 
     def forward(self, x, x_mask, x_t):
         # initial image for each individual
-        init_u = x[:, 0, :, :] # [B, H, W]
+        init_u = x[:, 0, :, :]  # [B, H, W]
         # mask for each individual
-        mask = x_mask[:, 0, :, :] # [B, H, W]
+        mask = x_mask[:, 0, :, :]  # [B, H, W]
 
         # for outputs from each of the k component
         x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all = [], [], [], [], [], [], []
 
         # component weights
-        logits = self.categorical_encoder(x, x_t) # [B, K]
+        logits = self.categorical_encoder(x, x_t)  # [B, K]
         c = F.softmax(logits, dim=-1)
 
         # shared encoder
@@ -142,6 +150,7 @@ class VAE(pl.LightningModule):
 
             # solve ode
             x_recon = self.solve_ode(k, zX, zR, init_u, mask, self.predefined_t, self.total_time, self.time_points)  # [B, T, H, W]
+            # x_recon = self.solve_ode(k, zX, zR, init_u, mask, x_t, self.total_time, self.time_points)  # [B, T, H, W]
 
             x_recon_all.append(x_recon)
             zX_mean_all.append(zX_mean)
@@ -188,7 +197,7 @@ class VAE(pl.LightningModule):
         self.log('recon_loss', recon_loss)
         self.log('kl_loss', kl_loss)
         self.log('log_var', self.log_var)
-        self.log('c_entropy', (-c * torch.log(c + 1e-8)).sum(dim=1).mean() / np.log(self.n_components))
+        self.log('c_entropy', (-c * torch.log(c)).sum(dim=1).mean() / np.log(self.n_components))
 
         return total_loss
 
@@ -217,17 +226,52 @@ class VAE(pl.LightningModule):
         loss = self.loss_function(outputs)
         self.log('val_loss', loss)
 
-        if self.trainer.current_epoch == (self.max_epochs - 1):
-            c, x, x_recon, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR = outputs
+        #if self.trainer.current_epoch == (self.max_epochs - 1):
+            #c, x, x_recon, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR = outputs
             # stack to shape [K, B, T, H, W] and permute to [B, K, T, H, W]
-            x_recon_stack = torch.stack(x_recon, dim=0).permute(1, 0, 2, 3, 4)
+            #x_recon_stack = torch.stack(x_recon, dim=0).permute(1, 0, 2, 3, 4)
             # get best component index per sample
-            c_idx = torch.argmax(c, dim=1)  # [B]
+            #c_idx = torch.argmax(c, dim=1)  # [B]
             # reconstructions from the best component
-            x_recon_best = x_recon_stack[torch.arange(c_idx.shape[0]), c_idx]  # shape: [B, T, H, W]
-            val_plot_recon(x, x_t, x_recon_best, zX, zR, self.artefacts)
+            #x_recon_best = x_recon_stack[torch.arange(c_idx.shape[0]), c_idx]  # shape: [B, T, H, W]
+            #val_plot_recon(x, x_t, x_recon_best, zX, zR, self.artefacts)
 
         return loss
+
+    def subset_evidence(self, outputs, subset=None):
+        zX_prior_mean, zX_prior_logvar = self.log_normal_prior(torch.tensor(self.alpha_range[0]), torch.tensor(self.alpha_range[1]))
+        zR_prior_mean, zR_prior_logvar = self.log_normal_prior(torch.tensor(self.reaction_coeff_range[0]), torch.tensor(self.reaction_coeff_range[1]))
+
+        c, x, x_recon_all, zX_mean_all, zX_logvar_all, zR_mean_all, zR_logvar_all, zX_all, zR_all = outputs
+        batch_size = x.shape[0]
+
+        # default to using all components
+        if subset is None:
+            subset = list(range(self.n_components))
+
+        recon_loss_all = torch.zeros(batch_size, self.n_components, device=self.device)
+        kl_zX_all = torch.zeros(batch_size, self.n_components, device=self.device)
+        kl_zR_all = torch.zeros(batch_size, self.n_components, device=self.device)
+
+        for k in subset:
+            kl_zX_all[:, k] = self.kl_divergence(zX_mean_all[k], zX_logvar_all[k], zX_prior_mean, zX_prior_logvar)
+            kl_zR_all[:, k] = self.kl_divergence(zR_mean_all[k], zR_logvar_all[k], zR_prior_mean, zR_prior_logvar)
+            recon_loss_all[:, k] = self.gaussian_nll_loss(x, x_recon_all[k], self.log_var)
+
+        # normalize c over selected components
+        c_sub = c[:, subset]
+        c_sub = c_sub / (c_sub.sum(dim=1, keepdim=True))
+
+        recon_loss = (-1) * torch.logsumexp((-recon_loss_all[:, subset]) + torch.log(c_sub), dim=1).sum()
+
+        kl_zX = torch.sum(c_sub * kl_zX_all[:, subset], dim=1).sum()
+        kl_zR = torch.sum(c_sub * kl_zR_all[:, subset], dim=1).sum()
+        kl_cat = self.kl_categorical(c_sub, len(subset))
+
+        kl_loss = kl_zX + kl_zR + kl_cat
+        total_loss = recon_loss + kl_loss
+
+        return total_loss
 
     def test_step(self, batch, batch_idx):
         x = batch['heat']
@@ -235,41 +279,50 @@ class VAE(pl.LightningModule):
         x_t = batch['time']
         init_u = x[:, 0, :, :]
         mask = x_mask[:, 0, :, :]
+        #raise Exception(x.shape)
+
+        # recalculating evidence for subsets
+        outputs = self(x, x_mask, x_t)
+        #for subset in [[0]]:
+        #for subset in [[0], [1], [0, 1]]:
+        for subset in [[0], [1], [2], [0, 1],  [0, 2], [1, 2], [0, 1, 2]]:
+            elbo = (-1) * self.subset_evidence(outputs, subset)
+            print(f"Subset {subset} → ELBO: {elbo.item():.2f}")
 
         recon_samples = []
 
+        #full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
+        #x_extrap_samples = []
+
         # reconstruction
-        if self.reconstruct:
-            for i in range(self.infer_samples):
-                c, _, x_recon, _, _, _, _, _, _ = self(x, x_mask, x_t)
-                x_recon_stack = torch.stack(x_recon, dim=0).permute(1, 0, 2, 3, 4)
-                c_idx = torch.argmax(c, dim=1)  # [B]
-                #raise Exception(c_idx)
-                x_recon_best = x_recon_stack[torch.arange(c_idx.shape[0]), c_idx]  # shape: [B, T, H, W]
-                recon_samples.append(x_recon_best.detach().cpu().numpy())
-            test_plot_recon(x, x_t, recon_samples, self.artefacts)
+        #if self.reconstruct:
+            #for i in range(self.infer_samples):
+                #c, _, x_recon, _, _, _, _, zX, zR = self(x, x_mask, x_t)
+                #x_recon_stack = torch.stack(x_recon, dim=0).permute(1, 0, 2, 3, 4)
+                #c_idx = torch.argmax(c, dim=1)  # [B]
+                #x_recon_best = x_recon_stack[torch.arange(c_idx.shape[0]), c_idx]  # shape: [B, T, H, W]
+                #recon_samples.append(x_recon_best.detach().cpu().numpy())
+
+                # extrapolation
+                #zX_stack = torch.stack(zX, dim=0).permute(1, 0, 2)
+                #zR_stack = torch.stack(zR, dim=0).permute(1, 0, 2)
+                #zX_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
+                #zR_best = zR_stack[torch.arange(c_idx.shape[0]), c_idx]
+                #x_extrap = self.solve_ode(c_idx[50], zX_best[50].unsqueeze(0), zR_best[50].unsqueeze(0), init_u[50].unsqueeze(0), mask[50].unsqueeze(0), full_t, self.extrap_time, self.extrap_points)
+                #x_extrap_samples.append(x_extrap.detach().cpu().numpy())
+
+            #test_plot_recon(x, x_t, recon_samples, self.artefacts)
+            #test_plot_extrap(full_t, x_extrap_samples, self.artefacts, self.data_dir)
 
         # parameter analysis
-        if self.param_analysis:
-            c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
-            zX_stack = torch.stack(zX, dim=0).permute(1, 0, 2)
-            zR_stack = torch.stack(zR, dim=0).permute(1, 0, 2)
-            c_idx = torch.argmax(c, dim=1)  # [B]
-            zX_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
-            zR_best = zR_stack[torch.arange(c_idx.shape[0]), c_idx]
-            test_plot_param(c_idx, zX_best, zR_best, self.artefacts, self.data_dir)
-
-        # interpolation and extrapolation
-        #if self.extrapolate:
+        #if self.param_analysis:
             #c, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
-            #full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
             #zX_stack = torch.stack(zX, dim=0).permute(1, 0, 2)
             #zR_stack = torch.stack(zR, dim=0).permute(1, 0, 2)
             #c_idx = torch.argmax(c, dim=1)  # [B]
             #zX_best = zX_stack[torch.arange(c_idx.shape[0]), c_idx]
             #zR_best = zR_stack[torch.arange(c_idx.shape[0]), c_idx]
-            #x_extrap = self.solve_ode(c_idx, zX_best, zR_best, init_u, mask, full_t, self.extrap_time, self.extrap_points)
-            #test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
+            #test_plot_param(c, zX_best, zR_best, self.artefacts, self.data_dir)
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, betas=(self.betas[0], self.betas[1]), amsgrad=self.amsgrad)

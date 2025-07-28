@@ -5,6 +5,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
 from numba import njit
+import math
 
 @njit
 def mask_aware_laplacian(y, mask, dx):
@@ -49,6 +50,7 @@ def generate_single_sample(hyperparams, mask):
     noise = hyperparams['noise']
     snr = hyperparams['snr']
     mixture = hyperparams['mixture']
+    n_components = hyperparams['n_components']
 
     x = np.linspace(0., total_space, spatial_points)  # spatial domain
     y = np.linspace(0., total_space, spatial_points)  # spatial domain
@@ -81,7 +83,7 @@ def generate_single_sample(hyperparams, mask):
 
     # for selecting a pde model
     if mixture:
-        model_index = np.random.choice(3)
+        model_index = np.random.choice(n_components)
     else:
         model_index = 0
 

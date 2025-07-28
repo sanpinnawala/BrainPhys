@@ -4,13 +4,13 @@ project: "reaction-diffusion"
 mode: "brainphys"
 batch_size: 4 # 1, 16
 num_samples: 1000 # 100 # num of individuals
-max_epochs: 250 # 400
+max_epochs: 200 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
-seed: 31415 # 0, 8, 21, 42, 1234, seed-31415
+#seed: 42 # 0, 8, 21, 42, 1234, 31415
 
 # log
 log_every_n_steps: 5
@@ -21,6 +21,9 @@ monitor: "val_loss"
 ckpt_filename: "best_model"
 save_top_k: 1
 ckpt_mode: "min"
+
+# mixture model
+n_components: 3
 
 # data
 alpha_range:
@@ -41,9 +44,6 @@ reaction_coeff_range:
 noise: False # observational noise
 snr: 5.0 # signal-to-noise ratio
 mixture: True
-
-# mixture model
-n_components: 3
 
 # model
 monotonic_regularisation: False # monotonic regularisation
@@ -106,7 +106,7 @@ dconv:
   groupnorm:
     groups: 4
 
-# test
+# seed-31415
 test_data_samples: 100
 reconstruct: True
 infer_samples: 100 # to quantify uncertainty
@@ -120,6 +120,6 @@ extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/seed-31415/"
+ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/"
 data_dir: "/app/reaction-diffusion-mixture-model/data/mix-data/"
-artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/seed-31415/"
+artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/test"

@@ -2,15 +2,15 @@
 experiment: "reaction-diffusion-experiment"
 project: "reaction-diffusion"
 mode: "brainphys"
-batch_size: 1 # 1, 16
-num_samples: 48 #1000 # 100 # num of individuals
-max_epochs: 250 # 400
+batch_size: 4 # 1, 16
+num_samples: 1000 # 100 # num of individuals
+max_epochs: 200 # 400
 accelerator: "gpu"
 strategy: auto
 devices: auto
 precision: 16-mixed
 profiler: "simple" # advanced
-seed: 0 # 0, 8, 42, 1234, 31415
+seed: 82868
 
 # log
 log_every_n_steps: 5
@@ -22,18 +22,21 @@ ckpt_filename: "best_model"
 save_top_k: 1
 ckpt_mode: "min"
 
+# mixture model
+n_components: 3
+
 # data
 alpha_range:
   - 0.01
   - 1.0
-total_space: 64.0 #31.0 # 149.0
-spatial_points: 65 #32 # 150  # grid size (HxW)
-total_time: 49.0 #24.0
-time_points: 50 #25
+total_space: 31.0 # 149.0
+spatial_points: 32 # 150  # grid size (HxW)
+total_time: 24.0
+time_points: 25
 predefined_t: # observation timepoints
   - 0.0
+  - 6.0
   - 24.0
-  - 48.0
 reaction: True
 reaction_coeff_range:
   - 0.01
@@ -43,7 +46,6 @@ snr: 5.0 # signal-to-noise ratio
 mixture: True
 
 # model
-learn_reaction: False
 monotonic_regularisation: False # monotonic regularisation
 reg_lambda: 1.0
 adam:
@@ -105,7 +107,7 @@ dconv:
     groups: 4
 
 # seed-31415
-test_data_samples: 13
+test_data_samples: 100
 reconstruct: True
 infer_samples: 100 # to quantify uncertainty
 param_analysis: True
@@ -118,6 +120,6 @@ extrap_time: 60.0
 extrap_points: 61
 
 # paths
-ckpt_dir: "/app/reaction-diffusion/checkpoints/adni_amyloid/"
-data_dir: "/app/reaction-diffusion/data/adni_amyloid/"
-artefacts_dir: "/app/reaction-diffusion/artefacts/adni_amyloid/"
+ckpt_dir: "/app/reaction-diffusion-mixture-model/checkpoints/seed-82868/"
+data_dir: "/app/reaction-diffusion-mixture-model/data/mix-data/"
+artefacts_dir: "/app/reaction-diffusion-mixture-model/artefacts/seed-test/"

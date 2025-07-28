@@ -39,7 +39,7 @@ class VAE(pl.LightningModule):
         self.encoder = Encoder(hyperparams)
         self.ode_func = ODEFunc(hyperparams)
         self.log_var = torch.nn.Parameter(torch.zeros(1))
-        # test
+        # seed-31415
         self.infer_samples = hyperparams['infer_samples']
         self.reconstruct = hyperparams['reconstruct']
         self.param_analysis = hyperparams['param_analysis']

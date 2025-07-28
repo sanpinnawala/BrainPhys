@@ -39,7 +39,7 @@ class VAE(pl.LightningModule):
         self.encoder = Encoder(hyperparams)
         self.ode_func = ODEFunc(hyperparams)
         self.log_var = torch.nn.Parameter(torch.zeros(1)) # learnable variance for gaussian negative log likelihood
-        # test
+        # seed-31415
         self.infer_samples = hyperparams['infer_samples']
         self.reconstruct = hyperparams['reconstruct']
         self.param_analysis = hyperparams['param_analysis']
@@ -148,7 +148,7 @@ class VAE(pl.LightningModule):
 
         # solve ode
         x_recon = self.solve_ode(zX, zR, init_u, mask, self.predefined_t, self.total_time, self.time_points)  # [B, T, H, W]
-        # x_recon = x_recon + g_theta(x_recon)  # [B, T, H, W]
+        # x_recon = x_recon + self.g_net(x)  # [B, T, H, W]
 
         return x, x_recon, mask, zX_mean, zX_logvar, zR_mean, zR_logvar, zX, zR
 
@@ -219,24 +219,29 @@ class VAE(pl.LightningModule):
 
         recon_samples = []
 
+        full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
+        x_extrap_samples = []
+
         # reconstruction
         if self.reconstruct:
             for i in range(self.infer_samples):
                 _, x_recon, _, _, _, _, _, _, _ = self(x, x_mask, x_t)
                 recon_samples.append(x_recon.detach().cpu().numpy())
+
+                # extrapolation
+                _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
+                x_extrap = self.solve_ode(zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
+                x_extrap_samples.append(x_extrap.detach().cpu().numpy())
+
             test_plot_recon(x, x_t, recon_samples, self.artefacts)
+            test_plot_extrap(full_t, x_extrap_samples, self.artefacts, self.data_dir)
 
         # parameter analysis
         if self.param_analysis:
             _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
             test_plot_param(zX, zR, self.artefacts, self.data_dir)
 
-        # interpolation and extrapolation
-        if self.extrapolate:
-            _, _, _, _, _, _, _, zX, zR = self(x, x_mask, x_t)
-            full_t = np.sort(np.concatenate((x_t.detach().cpu().numpy()[0], self.extrap_t)))
-            x_extrap = self.solve_ode(zX, zR, init_u, mask, full_t, self.extrap_time, self.extrap_points)
-            test_plot_extrap(full_t, x_extrap, self.artefacts, self.data_dir)
+
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay, betas=(self.betas[0], self.betas[1]), amsgrad=self.amsgrad)

@@ -101,7 +101,7 @@ dconv:
   groupnorm:
     groups: 4
 
-# test
+# seed-31415
 test_data_samples: 100
 reconstruct: True
 infer_samples: 100 # to quantify uncertainty

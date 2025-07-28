@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+import math
 
 
 class ODEFunc(nn.Module):
@@ -92,6 +93,7 @@ class ODEFunc(nn.Module):
             mlp_out = interior_mask * mlp_out
             du_dt += zR.unsqueeze(1) * mlp_out
         else:
-            du_dt += zR.unsqueeze(1) * y * (1 - y)
+            #du_dt += zR.unsqueeze(1) * y * (1 - y)
+            du_dt += zR.unsqueeze(1) * torch.sin(math.pi * y)
 
         return du_dt

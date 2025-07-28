@@ -3,6 +3,7 @@ torchvision==0.19.0
 pytorch-lightning==2.4.0
 wandb==0.18.1
 torchdiffeq==0.2.4
+neurodiffeq==0.3.3
 imageio==2.36.0
 torchinfo==1.8.0
 scikit-image==0.25.1
