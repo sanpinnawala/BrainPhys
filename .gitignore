@@ -1,5 +1,6 @@
 *.sh
 *.uuid
+reaction-diffusion-mixture-model-1d
 reaction-diffusion-mixture-model-two
 reaction-diffusion-mixture-adni
 reaction-diffusion-mixture-model/src/utils/evidence.py
