@@ -16,15 +16,14 @@ from model.model import VAE
 # from baseline.baseline import Baseline
 
 
-def main(config, seed):
+def main(config):
     wandb.finish()
-    #pl.seed_everything(config['seed'], workers=True)
-    pl.seed_everything(seed, workers=True)
+    pl.seed_everything(config['seed'], workers=True)
 
     timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
     run_name = f"{config['experiment']}_{timestamp}"
 
-    ckpt_path = f"{config['ckpt_dir']}/seed-{seed}"
+    ckpt_path = f"{config['ckpt_dir']}"
 
     wandb_logger = WandbLogger(project=config['project'], log_model=config['log_model'], config=config, name=run_name)
     checkpoint_callback = ModelCheckpoint(
@@ -57,7 +56,6 @@ def main(config, seed):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, required=True, help='path to config')
-    parser.add_argument('--seed', type=int, required=True, help='seed value')
     args = parser.parse_args()
 
     # load config
@@ -68,4 +66,4 @@ if __name__ == '__main__':
         print("Generating synthetic data...")
         generate_synthetic_data(config)
 
-    main(config, args.seed)
+    main(config)
